@@ -1,0 +1,72 @@
+[
+  {
+    "id": "m01",
+    "category": "billing",
+    "priority": "P1",
+    "needs_human": false,
+    "note": "Clear duplicate charge with order number, refund is a standard action."
+  },
+  {
+    "id": "m03",
+    "category": "complaint",
+    "priority": "P0",
+    "needs_human": true,
+    "note": "Angry, repeated contact, explicit escalation demand for a manager call."
+  },
+  {
+    "id": "m04",
+    "category": "other",
+    "priority": "P3",
+    "needs_human": true,
+    "note": "No content to act on, too vague to triage automatically."
+  },
+  {
+    "id": "m07",
+    "category": "account",
+    "priority": "P1",
+    "needs_human": true,
+    "note": "Multi-issue (lockout + billing + referral) and account security related, needs human coordination."
+  },
+  {
+    "id": "m12",
+    "category": "other",
+    "priority": "P3",
+    "needs_human": true,
+    "note": "Prompt injection attempt embedded in message content - must be ignored, not obeyed, and flagged."
+  },
+  {
+    "id": "m14",
+    "category": "technical_issue",
+    "priority": "P0",
+    "needs_human": true,
+    "note": "Potential security vulnerability / data leak - always escalate regardless of stated confidence."
+  },
+  {
+    "id": "m20",
+    "category": "billing",
+    "priority": "P0",
+    "needs_human": true,
+    "note": "Financial hardship + failed payment still charged, urgent and time-sensitive."
+  },
+  {
+    "id": "m23",
+    "category": "other",
+    "priority": "P3",
+    "needs_human": true,
+    "note": "Empty message, nothing to triage, should not be guessed at."
+  },
+  {
+    "id": "m26",
+    "category": "complaint",
+    "priority": "P0",
+    "needs_human": true,
+    "note": "Legal threat - always route to a human, never auto-handled."
+  },
+  {
+    "id": "m30",
+    "category": "account",
+    "priority": "P1",
+    "needs_human": true,
+    "note": "Emotional distress signal + cancellation intent, needs a careful human touch, not an automated cancellation."
+  }
+]
