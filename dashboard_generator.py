@@ -324,7 +324,7 @@ function render() {
     const messageCell = el("td", "message-cell");
     messageCell.append(el("div", "message-text", row.input_text || "No message text"));
     tr.append(messageCell);
-    tr.append(el("td", "", "")).lastChild.append(el("span", "category", safeText(d.category || "other").replaceAll("_", " ")));
+    const categoryCell = el("td"); categoryCell.append(el("span", "category", safeText(d.category || "other").replaceAll("_", " "))); tr.append(categoryCell);
     const pCell = el("td"); pCell.append(el("span", "priority " + priority(row), priority(row))); tr.append(pCell);
     const cCell = el("td");
     const cWrap = el("div", "confidence");
