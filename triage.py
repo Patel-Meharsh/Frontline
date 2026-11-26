@@ -339,7 +339,7 @@ def triage_message(client, msg_text):
 
     decision = fallback_decision(last_error)
     return decision, {
-        "raw_response": last_raw, "attempts": MAX_RETRIES + 1,
+        "raw_response": last_raw, "attempts": attempt + 1,
         "tokens": total_tokens,
         "latency_sec": round(time.perf_counter() - started, 3),
         "error": last_error or "model returned an unusable response",
