@@ -210,7 +210,7 @@ def local_safety_decision(message):
     words = re.findall(r"[a-z]+", stripped.lower())
     letters = "".join(words)
     vowel_ratio = (sum(ch in "aeiou" for ch in letters) / len(letters)) if letters else 1.0
-    if len(words) >= 2 and len(letters) >= 12 and all(len(word) >= 5 for word in words) and vowel_ratio < 0.13:
+    if len(words) >= 2 and len(letters) >= 12 and all(len(word) >= 5 for word in words) and vowel_ratio < 0.18:
         return {
             "category": "other", "priority": "P3",
             "summary": "The message appears to contain unintelligible text and no clear support request.",
