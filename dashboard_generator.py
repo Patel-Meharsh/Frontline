@@ -138,6 +138,21 @@ body.light .detail-box,body.light .detail-section .detail-value{background:#f7f9
 @media(max-width:1050px){.content-grid{grid-template-columns:1fr}.side-panel{display:grid;grid-template-columns:1fr 1fr;gap:22px}.side-divider{display:none}.priority-list{margin-top:18px}.category-list{align-content:start}}
 @media(max-width:760px){.shell{padding:20px 15px 42px}.topbar{margin-bottom:30px}.hero{display:block}.run-meta{text-align:left;margin-top:15px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.metric{padding:15px}.metric-value{font-size:26px}.toolbar-top{align-items:flex-start;flex-direction:column}.controls{width:100%}.search-wrap{min-width:100%}.controls select{flex:1}.side-panel{grid-template-columns:1fr}.top-actions .live-pill{display:none}}
 @media(max-width:420px){.metrics{grid-template-columns:1fr 1fr}.metric-value{font-size:23px}.brand-name{font-size:15px}.detail-grid{grid-template-columns:1fr}}
+
+/* Readability pass: increase small dashboard text without changing the layout. */
+body{font-size:16px}
+.brand-sub,.eyebrow{font-size:13px}
+.live-pill,.icon-btn,.secondary-btn,.metric-top,.run-meta,.priority-head,
+.result-count,.search-wrap input,select,.filter-btn,td{font-size:14px}
+.hero-copy{font-size:16px}
+.metric-foot,.panel-sub,.subtle,.table-footer{font-size:13px}
+.category-tag,.category,.priority,.human-flag,.auto-flag,.view-btn{font-size:12px}
+.id-cell,.confidence{font-size:13px}
+th{font-size:12px}
+.detail-label{font-size:11px}
+.detail-value{font-size:14px}
+.empty{font-size:15px}
+.footer-note{font-size:12px}
 </style>
 </head>
 <body>
