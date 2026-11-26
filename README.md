@@ -4,7 +4,7 @@ Frontline converts messy customer messages into structured triage decisions:
 
 `{category, priority, summary, suggested_action, needs_human, confidence}`.
 
-It uses Python and the Groq-hosted Llama 3.3 70B model through the OpenAI-compatible SDK. Clear empty messages and obvious instruction-manipulation attempts are handled by local safeguards; other messages are sent to the model and validated before being accepted.
+It uses Python and the Groq-hosted Llama 3.3 70B model through the OpenAI-compatible SDK. Clear empty messages, obvious gibberish and instruction-manipulation attempts are handled by local safeguards; other messages are sent to the model and validated before being accepted.
 
 ## 1. Setup
 
@@ -51,7 +51,7 @@ The triage command processes locally handled empty/injection messages without an
 
 ## 3. Reliability safeguards
 
-- **Input validation:** checks the JSON root, row shape, IDs, duplicate IDs, message type and maximum message length. Invalid rows become explicit human-review fallback results; malformed JSON produces a clear CLI error.
+- **Input validation:** checks the JSON root, row shape, IDs, duplicate IDs, message type and maximum message length. Obvious keyboard-mash text is conservatively caught by a simple heuristic. Invalid rows become explicit human-review fallback results; malformed JSON produces a clear CLI error.
 - **Prompt-injection defence:** the customer text is treated as untrusted data in the system instructions. A conservative local pattern guard intercepts clear instruction-manipulation phrases. This is defence in depth, not a guarantee against every possible attack.
 - **High-risk escalation:** security/privacy, legal, financial-hardship and selected distress indicators force human review; the model cannot turn these flags off.
 - **Strict output validation:** requires exactly the six schema fields, allowed category/priority values, non-empty bounded strings, a real boolean and a numeric confidence between 0 and 1.
