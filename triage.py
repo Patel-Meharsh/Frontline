@@ -18,7 +18,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"
 MAX_RETRIES = 2
 API_BASE = "https://api.groq.com/openai/v1"
 CONFIDENCE_THRESHOLD = 0.65
