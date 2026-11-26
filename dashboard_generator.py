@@ -353,7 +353,9 @@ function showDetails(row) {
   const fields = [
     ["Reference", row.id], ["Category", safeText(d.category || "other").replaceAll("_", " ")],
     ["Priority", priority(row)], ["Confidence", Math.round(confidence(row) * 100) + "%"],
-    ["Human review", isHuman(row) ? "Required" : "Not flagged"], ["Processing attempts", row.attempts]
+    ["Human review", isHuman(row) ? "Required" : "Not flagged"],
+    ["Processing attempts", row.meta && row.meta.attempts !== undefined ? row.meta.attempts : "—"],
+    ["Processing route", row.meta && row.meta.route ? row.meta.route : "—"]
   ];
   fields.forEach(([label,value]) => {
     const box = el("div", "detail-box");
@@ -361,7 +363,7 @@ function showDetails(row) {
     grid.append(box);
   });
   content.append(grid);
-  [["Original customer message", row.input_text], ["AI summary", d.summary], ["Suggested next action", d.suggested_action], ["Processing note", row.error]]
+  [["Original customer message", row.input_text], ["AI summary", d.summary], ["Suggested next action", d.suggested_action], ["Processing note", row.meta && row.meta.error ? row.meta.error : null]]
     .filter(item => item[1] !== undefined && item[1] !== null && item[1] !== "")
     .forEach(([label,value]) => {
       const section = el("section", "detail-section");
