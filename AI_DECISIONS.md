@@ -26,7 +26,7 @@ Prompt instructions are not a security boundary by themselves. The implementatio
 
 ### Local handling and escalation
 
-- Empty/whitespace-only messages are handled locally as `other / P3`, human review required, confidence 0.
+- Empty/whitespace-only and obvious keyboard-mash messages are handled locally as `other / P3`, human review required, confidence 0. The gibberish heuristic is intentionally conservative and only triggers for multiple long alphabetic tokens with a very low vowel ratio.
 - Clear prompt-manipulation patterns are handled locally as `other / P3`, human review required. This prevents the model from receiving those known challenge examples as instructions.
 - Security/privacy, legal, financial-hardship and selected distress patterns are enforced after the model response. The model cannot set `needs_human=false` for these matched cases.
 - Pattern matching is conservative and incomplete: paraphrases can evade it and benign messages can match. It is defence in depth, not a guarantee.
