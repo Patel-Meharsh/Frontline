@@ -194,7 +194,7 @@ def extract_json(text):
 
 
 def local_safety_decision(message):
-    """Return a deterministic decision for clear empty, injection, and high-risk cases."""
+    """Return a deterministic decision for clear empty, gibberish and injection cases."""
     stripped = message.strip()
     if not stripped:
         return {
@@ -203,6 +203,20 @@ def local_safety_decision(message):
             "suggested_action": "Ask the customer to resend their question or support request.",
             "needs_human": True, "confidence": 0.0,
         }, "empty_input"
+
+    # Conservative signal for obvious keyboard-mash: several long alphabetic tokens
+    # with almost no vowels. This intentionally avoids classifying short words like
+    # "hey" or normal short messages as gibberish.
+    words = re.findall(r"[a-z]+", stripped.lower())
+    letters = "".join(words)
+    vowel_ratio = (sum(ch in "aeiou" for ch in letters) / len(letters)) if letters else 1.0
+    if len(words) >= 2 and len(letters) >= 12 and all(len(word) >= 5 for word in words) and vowel_ratio < 0.13:
+        return {
+            "category": "other", "priority": "P3",
+            "summary": "The message appears to contain unintelligible text and no clear support request.",
+            "suggested_action": "Ask the customer to resend the message in a readable form.",
+            "needs_human": True, "confidence": 0.0,
+        }, "gibberish_input"
 
     if _matches_any(INJECTION_PATTERNS, stripped):
         return {
