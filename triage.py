@@ -19,7 +19,7 @@ import time
 from datetime import datetime, timezone
 
 MODEL = "openai/gpt-oss-120b"
-MAX_RETRIES = 2
+MAX_RETRIES = 3
 API_BASE = "https://api.groq.com/openai/v1"
 CONFIDENCE_THRESHOLD = 0.65
 MAX_MESSAGE_LENGTH = 20000
@@ -251,6 +251,36 @@ def get_client():
     return OpenAI(api_key=api_key, base_url=API_BASE, timeout=30.0, max_retries=0)
 
 
+def rate_limit_wait_seconds(exc):
+    """Return Groq's suggested wait for a retryable TPM rate limit, if available."""
+    if type(exc).__name__ != "RateLimitError":
+        return None
+
+    message = str(exc)
+    # Daily/request quotas and billing limits will not be fixed by a short retry.
+    if "tokens per minute (TPM)" not in message:
+        return None
+
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    retry_after = headers.get("retry-after") or headers.get("Retry-After")
+    if retry_after:
+        try:
+            return max(0.1, float(retry_after))
+        except (TypeError, ValueError):
+            pass
+
+    # Groq commonly includes: "Please try again in 697.5ms" or "2.7s".
+    match = re.search(r"try again in\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(ms|milliseconds|s|sec|seconds)?", message, re.IGNORECASE)
+    if match:
+        delay = float(match.group(1))
+        unit = (match.group(2) or "s").lower()
+        if unit in ("ms", "millisecond", "milliseconds"):
+            delay /= 1000.0
+        return max(0.1, delay) + 0.15
+    return 1.0
+
+
 def triage_message(client, msg_text):
     """Run local guards, then model call with strict validation/retries/fail-safe fallback."""
     if not isinstance(msg_text, str):
@@ -295,6 +325,15 @@ def triage_message(client, msg_text):
             last_error = result
         except Exception as exc:
             last_error = type(exc).__name__ + ": " + str(exc)
+            if type(exc).__name__ == "RateLimitError":
+                wait_seconds = rate_limit_wait_seconds(exc)
+                # Only retry TPM throttling. Other 429s (daily quota/billing) need
+                # an account-side change and should fail closed immediately.
+                if wait_seconds is None:
+                    break
+                if attempt < MAX_RETRIES:
+                    time.sleep(wait_seconds)
+                    continue
         if attempt < MAX_RETRIES:
             time.sleep(0.5 * (attempt + 1))
 
