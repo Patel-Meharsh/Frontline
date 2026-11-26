@@ -271,7 +271,7 @@ def rate_limit_wait_seconds(exc):
             pass
 
     # Groq commonly includes: "Please try again in 697.5ms" or "2.7s".
-    match = re.search(r"try again in\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(ms|milliseconds|s|sec|seconds)?", message, re.IGNORECASE)
+    match = re.search(r"try again in\s*([0-9]+(?:\.[0-9]+)?)\s*(ms|milliseconds|s|sec|seconds)?", message, re.IGNORECASE)
     if match:
         delay = float(match.group(1))
         unit = (match.group(2) or "s").lower()
