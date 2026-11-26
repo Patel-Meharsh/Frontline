@@ -6,7 +6,7 @@ Frontline turns one raw customer message at a time into a structured support-tri
 
 `category`, `priority`, `summary`, `suggested_action`, `needs_human`, and `confidence`.
 
-The implementation uses Python and the OpenAI Python SDK pointed at Groq's OpenAI-compatible API. The selected model is Llama 3.3 70B Versatile. A direct API call is intentionally used instead of an agent framework because the task is a single classification step, not a multi-tool workflow.
+The implementation uses Python and the OpenAI Python SDK pointed at Groq's OpenAI-compatible API. The selected model is `openai/gpt-oss-120b`, which replaced the retired `llama-3.3-70b-versatile` model on Groq. A direct API call is intentionally used instead of an agent framework because the task is a single classification step, not a multi-tool workflow.
 
 ## Prompt and model settings
 
