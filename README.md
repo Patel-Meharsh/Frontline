@@ -4,7 +4,7 @@ Frontline converts messy customer messages into structured triage decisions:
 
 `{category, priority, summary, suggested_action, needs_human, confidence}`.
 
-It uses Python and the Groq-hosted Llama 3.3 70B model through the OpenAI-compatible SDK. Clear empty messages, obvious gibberish and instruction-manipulation attempts are handled by local safeguards; other messages are sent to the model and validated before being accepted.
+It uses Python and Groq's OpenAI-compatible API with the `openai/gpt-oss-120b` model. Clear empty messages, obvious gibberish and instruction-manipulation attempts are handled by local safeguards; other messages are sent to the model and validated before being accepted. The previous `llama-3.3-70b-versatile` model was retired by Groq on August 16, 2026.
 
 ## 1. Setup
 
