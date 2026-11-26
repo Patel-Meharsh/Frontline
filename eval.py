@@ -1,90 +1,156 @@
 #!/usr/bin/env python3
 """
-Evaluate triage results.json against data/ground_truth.json.
-Reports agreement rate on category, priority, and needs_human, plus where it fails.
+Evaluate a Frontline run against the hand-labelled reference set.
 
-Usage:
-    python eval.py
-    python eval.py --results results.json --truth data/ground_truth.json
+The reference labels score category, priority and human escalation. Optional
+summary_must_mention/action_must_mention keyword rubrics check coverage of the
+human-authored reference expectations; they are not semantic truth detectors.
 """
-
-import json
 import argparse
+import json
+import sys
+
+
+def load_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        raise ValueError("File not found: " + path)
+    except json.JSONDecodeError as exc:
+        raise ValueError("{} is not valid JSON (line {}, column {}).".format(path, exc.lineno, exc.colno))
+
+
+def pct(numerator, denominator):
+    return "{}/{} ({:.1f}%)".format(numerator, denominator, 100.0 * numerator / denominator) if denominator else "n/a (0 labelled examples)"
+
+
+def text_value(value):
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def keyword_coverage(value, required):
+    """All required terms are simple case-insensitive substrings; no semantic claim."""
+    if not required:
+        return None, []
+    normalized = text_value(value)
+    missing = [term for term in required if text_value(term) not in normalized]
+    return len(required) - len(missing), missing
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Evaluate Frontline results against labelled examples.")
     parser.add_argument("--results", default="results.json")
     parser.add_argument("--truth", default="data/ground_truth.json")
     args = parser.parse_args()
 
-    with open(args.results, "r", encoding="utf-8") as f:
-        results_data = json.load(f)
-    with open(args.truth, "r", encoding="utf-8") as f:
-        truth_data = json.load(f)
+    try:
+        results_data = load_json(args.results)
+        truth_data = load_json(args.truth)
+    except ValueError as exc:
+        print("EVALUATION ERROR: " + str(exc), file=sys.stderr)
+        return 2
 
-    results_by_id = {r["id"]: r for r in results_data["results"]}
-    truth_by_id = {t["id"]: t for t in truth_data}
+    if not isinstance(results_data, dict) or not isinstance(results_data.get("results"), list):
+        print("EVALUATION ERROR: results file must contain a 'results' array.", file=sys.stderr)
+        return 2
+    if not isinstance(truth_data, list):
+        print("EVALUATION ERROR: ground truth must be a JSON array.", file=sys.stderr)
+        return 2
 
-    total = 0
-    category_match = 0
-    priority_match = 0
-    human_match = 0
-    all_three_match = 0
+    results_by_id = {}
+    malformed_results = []
+    for index, row in enumerate(results_data["results"], 1):
+        if not isinstance(row, dict) or not isinstance(row.get("id"), str) or not isinstance(row.get("decision"), dict):
+            malformed_results.append(index)
+            continue
+        if row["id"] in results_by_id:
+            malformed_results.append(index)
+            continue
+        results_by_id[row["id"]] = row
+
+    truth_by_id = {}
+    for row in truth_data:
+        if isinstance(row, dict) and isinstance(row.get("id"), str):
+            truth_by_id[row["id"]] = row
+    if not truth_by_id:
+        print("EVALUATION ERROR: no valid labelled examples found.", file=sys.stderr)
+        return 2
+
+    counts = {"category": 0, "priority": 0, "needs_human": 0, "exact": 0}
+    summary_checks = {"checked": 0, "passed": 0, "missing": []}
+    action_checks = {"checked": 0, "passed": 0, "missing": []}
+    missing_ids = []
     mismatches = []
 
-    for tid, truth in truth_by_id.items():
-        if tid not in results_by_id:
-            print(f"WARNING: {tid} missing from results, skipping")
+    for message_id, truth in truth_by_id.items():
+        row = results_by_id.get(message_id)
+        if row is None:
+            missing_ids.append(message_id)
             continue
-        total += 1
-        decision = results_by_id[tid]["decision"]
+        decision = row["decision"]
+        category_ok = decision.get("category") == truth.get("category")
+        priority_ok = decision.get("priority") == truth.get("priority")
+        human_ok = decision.get("needs_human") == truth.get("needs_human")
+        counts["category"] += int(category_ok)
+        counts["priority"] += int(priority_ok)
+        counts["needs_human"] += int(human_ok)
+        counts["exact"] += int(category_ok and priority_ok and human_ok)
+        if not (category_ok and priority_ok and human_ok):
+            mismatches.append((message_id, truth, decision))
 
-        cat_ok = decision["category"] == truth["category"]
-        pri_ok = decision["priority"] == truth["priority"]
-        human_ok = decision["needs_human"] == truth["needs_human"]
+        for rubric_key, field, bucket in (
+            ("summary_must_mention", "summary", summary_checks),
+            ("action_must_mention", "suggested_action", action_checks),
+        ):
+            required = truth.get(rubric_key, [])
+            if required:
+                found, missing = keyword_coverage(decision.get(field), required)
+                bucket["checked"] += 1
+                bucket["passed"] += int(not missing)
+                if missing:
+                    bucket["missing"].append((message_id, missing))
 
-        category_match += cat_ok
-        priority_match += pri_ok
-        human_match += human_ok
-        if cat_ok and pri_ok and human_ok:
-            all_three_match += 1
-        else:
-            mismatches.append({
-                "id": tid,
-                "text": results_by_id[tid]["input_text"][:80],
-                "expected": {"category": truth["category"], "priority": truth["priority"], "needs_human": truth["needs_human"]},
-                "got": {"category": decision["category"], "priority": decision["priority"], "needs_human": decision["needs_human"]},
-                "note": truth.get("note", ""),
-            })
-
-    print(f"Evaluated {total} hand-labeled messages\n")
-    print(f"Category agreement:     {category_match}/{total} ({100*category_match/total:.0f}%)")
-    print(f"Priority agreement:     {priority_match}/{total} ({100*priority_match/total:.0f}%)")
-    print(f"needs_human agreement:  {human_match}/{total} ({100*human_match/total:.0f}%)")
-    print(f"Exact match (all 3):    {all_three_match}/{total} ({100*all_three_match/total:.0f}%)")
+    total = len(truth_by_id)
+    print("FRONTLINE EVALUATION")
+    print("Labelled examples: {} | Matched results: {} | Missing: {}".format(total, total-len(missing_ids), len(missing_ids)))
+    print("Category agreement:     " + pct(counts["category"], total-len(missing_ids)))
+    print("Priority agreement:     " + pct(counts["priority"], total-len(missing_ids)))
+    print("needs_human agreement:  " + pct(counts["needs_human"], total-len(missing_ids)))
+    print("Exact match (3 fields): " + pct(counts["exact"], total-len(missing_ids)))
+    print("\nSUMMARY / ACTION QUALITY RUBRIC")
+    print("Summary keyword coverage: " + pct(summary_checks["passed"], summary_checks["checked"]))
+    print("Suggested-action keyword coverage: " + pct(action_checks["passed"], action_checks["checked"]))
+    print("Note: keyword coverage is a transparent checklist, not a semantic or hallucination detector.")
 
     if mismatches:
-        print(f"\n--- Where it fails ({len(mismatches)}) ---")
-        for m in mismatches:
-            print(f"\n[{m['id']}] \"{m['text']}...\"")
-            print(f"  expected: {m['expected']}")
-            print(f"  got:      {m['got']}")
-            print(f"  why it matters: {m['note']}")
+        print("\nCLASSIFICATION DISAGREEMENTS")
+        for message_id, truth, decision in mismatches:
+            print("[{}] expected category/priority/human: {}/{}/{}; got: {}/{}/{}".format(
+                message_id, truth.get("category"), truth.get("priority"), truth.get("needs_human"),
+                decision.get("category"), decision.get("priority"), decision.get("needs_human")))
+            if truth.get("note"):
+                print("  Reference rationale: " + str(truth["note"]))
+    for label, bucket in (("summary", summary_checks), ("action", action_checks)):
+        for message_id, missing in bucket["missing"]:
+            print("{} rubric [{:s}] missing terms: {}".format(label, message_id, ", ".join(missing)))
+    if missing_ids:
+        print("\nMissing labelled IDs: " + ", ".join(missing_ids))
+    if malformed_results:
+        print("Malformed/duplicate result rows at positions: " + ", ".join(map(str, malformed_results)))
 
-    # cost / latency summary
-    all_results = results_data["results"]
-    total_tokens = sum(r["meta"]["tokens"] for r in all_results)
-    total_time = sum(r["meta"]["latency_sec"] for r in all_results)
-    n = len(all_results)
-    print(f"\n--- Cost / latency (full {n}-message run) ---")
-    print(f"Avg tokens/message: {total_tokens/n:.0f}")
-    print(f"Avg latency/message: {total_time/n:.2f}s")
-    print(f"Total tokens: {total_tokens} (Groq free tier: $0 - well within free limits)")
-    print(f"Cost-cutting idea: batch similar short messages into one prompt call, or route")
-    print(f"obviously-simple P2/P3 messages to a smaller/faster model and reserve the")
-    print(f"current model only for ambiguous or flagged cases.")
+    all_rows = results_data["results"]
+    usable_meta = [row.get("meta", {}) for row in all_rows if isinstance(row, dict) and isinstance(row.get("meta"), dict)]
+    total_tokens = sum(meta.get("tokens", 0) for meta in usable_meta if isinstance(meta.get("tokens", 0), (int, float)))
+    latencies = [meta.get("latency_sec", 0) for meta in usable_meta if isinstance(meta.get("latency_sec", 0), (int, float))]
+    fallback_count = sum(meta.get("route") == "fallback" for meta in usable_meta)
+    human_count = sum(isinstance(row, dict) and isinstance(row.get("decision"), dict) and row["decision"].get("needs_human") is True for row in all_rows)
+    print("\nRUN HEALTH")
+    print("Results: {} | Human review: {} | Fallback routes: {}".format(len(all_rows), human_count, fallback_count))
+    print("Total tokens: {} | Average tokens/result: {}".format(total_tokens, round(total_tokens / len(all_rows)) if all_rows else "n/a"))
+    print("Average measured latency: {:.3f}s/result".format(sum(latencies) / len(latencies) if latencies else 0.0))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
