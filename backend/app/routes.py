@@ -1,13 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import secrets
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 import triage
+from backend.app.core.config import settings
 from backend.app.db import get_db
 from backend.app.models import Message, MessageReview, TriageDecision
 from backend.app.schemas import MessageCreate, MessageListResponse, MessageResponse, ReviewUpdate
 from backend.app.triage_service import classify_message
 
 router = APIRouter()
+
+def require_support_access(x_support_token: str | None = Header(default=None)):
+    """Protect internal message history and review operations with a server-side token."""
+    expected = settings.support_dashboard_token
+    if not expected:
+        raise HTTPException(status_code=503, detail="Support dashboard access is not configured")
+    if not x_support_token or not secrets.compare_digest(x_support_token, expected):
+        raise HTTPException(status_code=401, detail="Valid support access token required")
 
 @router.post("/messages", response_model=MessageResponse, status_code=201, tags=["messages"])
 def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
@@ -36,7 +46,7 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
     db.commit()
     return db.execute(select(Message).options(joinedload(Message.decision)).where(Message.id == message.id)).unique().scalar_one()
 
-@router.get("/messages", response_model=MessageListResponse, tags=["messages"])
+@router.get("/messages", response_model=MessageListResponse, tags=["messages"], dependencies=[Depends(require_support_access)])
 def list_messages(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
                   status: str | None = Query(None, pattern="^(new|in_review|resolved)$"),
                   db: Session = Depends(get_db)):
@@ -47,14 +57,14 @@ def list_messages(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, g
     items = db.execute(query.limit(limit).offset(offset)).unique().scalars().all()
     return {"items": items, "total": db.scalar(count) or 0, "limit": limit, "offset": offset}
 
-@router.get("/messages/{message_id}", response_model=MessageResponse, tags=["messages"])
+@router.get("/messages/{message_id}", response_model=MessageResponse, tags=["messages"], dependencies=[Depends(require_support_access)])
 def get_message(message_id: int, db: Session = Depends(get_db)):
     item = db.execute(select(Message).options(joinedload(Message.decision)).where(Message.id == message_id)).unique().scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Message not found")
     return item
 
-@router.patch("/messages/{message_id}/review", response_model=MessageResponse, tags=["reviews"])
+@router.patch("/messages/{message_id}/review", response_model=MessageResponse, tags=["reviews"], dependencies=[Depends(require_support_access)])
 def update_review(message_id: int, payload: ReviewUpdate, db: Session = Depends(get_db)):
     item = db.get(Message, message_id)
     if item is None:
@@ -65,7 +75,7 @@ def update_review(message_id: int, payload: ReviewUpdate, db: Session = Depends(
     db.commit()
     return get_message(message_id, db)
 
-@router.get("/dashboard/stats", tags=["dashboard"])
+@router.get("/dashboard/stats", tags=["dashboard"], dependencies=[Depends(require_support_access)])
 def dashboard_stats(db: Session = Depends(get_db)):
     total = db.scalar(select(func.count(Message.id))) or 0
     new = db.scalar(select(func.count(Message.id)).where(Message.review_status == "new")) or 0

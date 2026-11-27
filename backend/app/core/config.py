@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "sqlite:///./frontline.db"
     groq_api_key: str | None = None
+    support_dashboard_token: str | None = None
     cors_origins: str = "http://localhost:5173"
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
     @property
