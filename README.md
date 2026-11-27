@@ -1,84 +1,76 @@
 # FRONTLINE — AI Customer Support Triage
 
-Frontline receives customer messages, classifies and prioritises them with AI, stores the original message and its decision, and presents the history to a support team.
+Frontline accepts customer support requests, classifies and prioritises them with AI, stores messages and decisions in PostgreSQL, and gives support agents a private workspace.
 
-## Application architecture
+## Architecture
 
-- **React + Vite:** customer message portal and internal support dashboard.
-- **FastAPI:** our application API. It validates requests, coordinates triage, stores records and serves dashboard data.
-- **Groq API:** external inference provider running `openai/gpt-oss-120b`.
-- **PostgreSQL:** persistent message, decision and review storage.
-- **SQLAlchemy:** Python ORM for database operations.
-- **Pydantic:** request and response validation.
+- **React + Vite:** public customer portal and private staff workspace.
+- **FastAPI:** validates requests, coordinates AI triage, stores records, authenticates staff and serves the dashboard.
+- **Groq API:** model inference using `openai/gpt-oss-120b`.
+- **Neon PostgreSQL:** persistent customer messages, AI decisions, staff accounts and review history.
+- **SQLAlchemy:** database ORM.
+- **Pydantic:** API request/response validation.
+- **JWT + Argon2:** short-lived staff sessions and one-way password hashing.
 
 The browser calls our FastAPI backend. Only the backend calls Groq; the Groq API key is never sent to the browser.
 
-## Request workflow
+## Customer workflow
 
-1. A customer submits their name, email and message in the React portal.
-2. React sends `POST /api/messages` to FastAPI.
-3. FastAPI validates the request and commits the original message to the database first.
-4. The triage service reuses the existing `triage.py` engine. Local guardrails run before Groq inference.
-5. The model output is parsed, schema-validated and passed through risk-escalation rules.
-6. The decision and processing metadata are stored in PostgreSQL.
-7. The API returns the structured decision to the customer portal.
-8. The support dashboard retrieves historical messages and statistics from the API. Agents can update review status.
+1. A customer opens the public customer-support page.
+2. They submit their name, email and message without creating an account.
+3. FastAPI validates and saves the original message first.
+4. The triage service reuses the existing `triage.py` engine and calls Groq when required.
+5. The AI decision is saved privately in PostgreSQL.
+6. The customer receives only a confirmation and ticket reference. The customer-facing API response does not contain the original message or internal AI analysis.
 
-If automated processing fails, the original message remains saved and a human-review fallback is recorded.
+## Staff workflow
 
-## 1. Configuration
+1. A staff account is created by an administrator using the backend CLI.
+2. A staff member signs in with their own email and password.
+3. Passwords are stored as Argon2 hashes, never as plaintext.
+4. FastAPI issues a signed, expiring JWT access token.
+5. The React app sends that token in the standard `Authorization: Bearer` header.
+6. Protected endpoints return the inbox, customer details, AI decisions and dashboard statistics only to authenticated, active staff.
+7. Review actions are recorded with the signed-in staff member's email.
 
-Copy the example environment file in the repository root:
+There is no public staff registration endpoint and no shared support access token.
 
-```bash
-cp .env.example .env
-```
+## 1. Configure environment
 
-Set your Groq key and replace the support dashboard token with a long random secret. Never commit `.env` or expose either secret in frontend code.
+Copy `.env.example` to `.env` in the repository root. Set:
+- `GROQ_API_KEY`: your Groq API key.
+- `DATABASE_URL`: your Neon connection string, using the SQLAlchemy driver prefix `postgresql+psycopg://`.
+- `JWT_SECRET_KEY`: a long random secret. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+- `CORS_ORIGINS`: the frontend origin, usually `http://localhost:5173` for local development.
 
-## 2. Start PostgreSQL
+Never commit `.env` or expose the Groq key or JWT secret in frontend code. Use a unique JWT secret in production; do not use the development fallback.
 
-Docker Desktop must be running:
+## 2. Install and start the backend
 
-```bash
-docker compose up -d db
-```
-
-The supplied local database uses:
-- Database: `frontline`
-- User: `frontline`
-- Port: `5432`
-
-The connection string is already shown in `.env.example`. You can also use SQLite for a quick local smoke test by leaving `DATABASE_URL` unset; PostgreSQL is the intended application database.
-
-## 3. Start the backend
-
-From the repository root:
+From the repository root (Windows Git Bash):
 
 ```bash
 python -m venv .venv
-```
-
-Windows Git Bash:
-
-```bash
 source .venv/Scripts/activate
-```
-
-Install dependencies and start FastAPI:
-
-```bash
 pip install -r requirements.txt
 uvicorn backend.app.main:app --reload --port 8000
 ```
 
-API health check: http://localhost:8000/api/health
+The API creates missing tables on startup for this MVP. Health check: http://localhost:8000/api/health
 
-Interactive API documentation: http://localhost:8000/docs
+## 3. Create the first staff account
+
+Open a second terminal in the repository root, activate the same virtual environment, and run:
+
+```bash
+python -m backend.create_staff
+```
+
+Enter the staff email and a password of at least 12 characters when prompted. The password is hashed before it is saved. Repeat this command to create additional staff accounts. There is intentionally no public sign-up page.
 
 ## 4. Start the frontend
 
-Open a second terminal:
+Open another terminal:
 
 ```bash
 cd frontend
@@ -86,22 +78,20 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173.
-
-The **Customer portal** is for submitting a message. The **Support dashboard** requires the support token configured in the backend environment.
+Open http://localhost:5173. The customer portal is the default view. Choose **Staff workspace** to sign in.
 
 ## API endpoints
 
 | Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| POST | `/api/messages` | Public | Submit and triage a customer message |
-| GET | `/api/messages` | Support token | List message history |
-| GET | `/api/messages/{id}` | Support token | Retrieve one message |
-| PATCH | `/api/messages/{id}/review` | Support token | Update review status |
-| GET | `/api/dashboard/stats` | Support token | Dashboard statistics |
+| POST | `/api/messages` | Public | Submit a customer message; returns a receipt only |
+| POST | `/api/auth/login` | Public | Authenticate a staff member |
+| GET | `/api/auth/me` | Staff JWT | Validate the current staff session |
+| GET | `/api/messages` | Staff JWT | List message history |
+| GET | `/api/messages/{id}` | Staff JWT | Retrieve a message and its AI decision |
+| PATCH | `/api/messages/{id}/review` | Staff JWT | Update review status |
+| GET | `/api/dashboard/stats` | Staff JWT | Dashboard statistics |
 | GET | `/api/health` | Public | Health check |
-
-The support dashboard sends `X-Support-Token` in its API requests. This is a minimal demo access gate, not a replacement for production user accounts, role-based access, token rotation, rate limiting or a full authentication provider.
 
 ## Existing AI challenge workflow
 
@@ -114,27 +104,20 @@ python dashboard_generator.py
 ```
 
 - `triage.py` runs inference and produces structured decisions.
-- `eval.py` independently compares saved decisions with the hand-labelled examples. **triage.py does not call eval.py.**
-- `dashboard_generator.py` creates the original static HTML report. The new React dashboard reads persistent records through FastAPI instead.
+- `eval.py` independently compares saved decisions with hand-labelled examples. **triage.py does not call eval.py.**
+- `dashboard_generator.py` creates the original static HTML report. The React dashboard reads persistent records through FastAPI.
 
 ## Tests
 
-Backend tests do not require a live Groq key:
-
 ```bash
 python -m unittest discover -s tests -v
-```
-
-Frontend production build:
-
-```bash
 cd frontend
 npm install
 npm run build
 ```
 
-GitHub Actions runs both checks on pushes to `main`.
+GitHub Actions runs backend tests and the frontend build on pushes to `main`.
 
-## Current scope and next steps
+## MVP limitations before production
 
-This is the first full-stack MVP foundation. Before production use, add proper support-agent authentication and roles, Alembic-managed migrations, pagination/retention policies, rate limiting, audit logging, background retries for failed inference, and deployment configuration. The current API uses synchronous inference to keep the first workflow understandable and testable.
+Use HTTPS, rotate and protect JWT secrets, add login rate limiting and account lockout, introduce role-based permissions and password-reset procedures, use Alembic migrations instead of relying on `create_all`, and consider moving AI inference to a background worker. JWTs are stored in browser session storage in this MVP; a production deployment should consider secure, HttpOnly cookies and CSRF protection.
