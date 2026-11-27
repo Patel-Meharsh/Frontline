@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    container_name: frontline-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: frontline
+      POSTGRES_USER: frontline
+      POSTGRES_PASSWORD: frontline_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - frontline_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frontline -d frontline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  frontline_postgres_data:
