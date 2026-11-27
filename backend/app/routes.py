@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 import triage
 from backend.app.auth import create_access_token, get_current_staff, verify_password
 from backend.app.db import get_db
+from backend.app.core.config import settings
 from backend.app.models import Message, MessageReview, StaffUser, TriageDecision
 from backend.app.schemas import (
     CustomerMessageReceipt, MessageCreate, MessageListResponse, MessageResponse,
@@ -94,7 +95,7 @@ def update_review(message_id: int, payload: ReviewUpdate, staff: StaffUser = Dep
     item.review_status = payload.status
     db.add(MessageReview(message_id=item.id, status=payload.status, reviewed_by=staff.email, notes=payload.notes))
     db.commit()
-    return get_message(message_id, db, staff)
+    return db.execute(select(Message).options(joinedload(Message.decision)).where(Message.id == message_id)).unique().scalar_one()
 
 
 @router.get("/dashboard/stats", tags=["dashboard"], dependencies=[Depends(get_current_staff)])
