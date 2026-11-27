@@ -1,35 +1,111 @@
-# FRONTLINE — One-Day AI Build Challenge
+# FRONTLINE — AI Customer Support Triage
 
-Frontline converts messy customer messages into structured triage decisions:
+Frontline receives customer messages, classifies and prioritises them with AI, stores the original message and its decision, and presents the history to a support team.
 
-`{category, priority, summary, suggested_action, needs_human, confidence}`.
+## Application architecture
 
-It uses Python and Groq's OpenAI-compatible API with the `openai/gpt-oss-120b` model. Clear empty messages, obvious gibberish and instruction-manipulation attempts are handled by local safeguards; other messages are sent to the model and validated before being accepted. The previous `llama-3.3-70b-versatile` model was retired by Groq on August 16, 2026.
+- **React + Vite:** customer message portal and internal support dashboard.
+- **FastAPI:** our application API. It validates requests, coordinates triage, stores records and serves dashboard data.
+- **Groq API:** external inference provider running `openai/gpt-oss-120b`.
+- **PostgreSQL:** persistent message, decision and review storage.
+- **SQLAlchemy:** Python ORM for database operations.
+- **Pydantic:** request and response validation.
 
-## 1. Setup
+The browser calls our FastAPI backend. Only the backend calls Groq; the Groq API key is never sent to the browser.
 
-1. Create a Groq API key at https://console.groq.com.
-2. Install dependencies:
+## Request workflow
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. A customer submits their name, email and message in the React portal.
+2. React sends `POST /api/messages` to FastAPI.
+3. FastAPI validates the request and commits the original message to the database first.
+4. The triage service reuses the existing `triage.py` engine. Local guardrails run before Groq inference.
+5. The model output is parsed, schema-validated and passed through risk-escalation rules.
+6. The decision and processing metadata are stored in PostgreSQL.
+7. The API returns the structured decision to the customer portal.
+8. The support dashboard retrieves historical messages and statistics from the API. Agents can update review status.
 
-3. Set the key in your terminal.
+If automated processing fails, the original message remains saved and a human-review fallback is recorded.
 
-   **Windows PowerShell**
-   ```powershell
-   $env:GROQ_API_KEY="your_api_key"
-   ```
+## 1. Configuration
 
-   **Git Bash / macOS / Linux**
-   ```bash
-   export GROQ_API_KEY="your_api_key"
-   ```
+Copy the example environment file in the repository root:
 
-Do not commit your API key to the repository.
+```bash
+cp .env.example .env
+```
 
-## 2. Run the complete workflow
+Set your Groq key and replace the support dashboard token with a long random secret. Never commit `.env` or expose either secret in frontend code.
+
+## 2. Start PostgreSQL
+
+Docker Desktop must be running:
+
+```bash
+docker compose up -d db
+```
+
+The supplied local database uses:
+- Database: `frontline`
+- User: `frontline`
+- Port: `5432`
+
+The connection string is already shown in `.env.example`. You can also use SQLite for a quick local smoke test by leaving `DATABASE_URL` unset; PostgreSQL is the intended application database.
+
+## 3. Start the backend
+
+From the repository root:
+
+```bash
+python -m venv .venv
+```
+
+Windows Git Bash:
+
+```bash
+source .venv/Scripts/activate
+```
+
+Install dependencies and start FastAPI:
+
+```bash
+pip install -r requirements.txt
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+API health check: http://localhost:8000/api/health
+
+Interactive API documentation: http://localhost:8000/docs
+
+## 4. Start the frontend
+
+Open a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173.
+
+The **Customer portal** is for submitting a message. The **Support dashboard** requires the support token configured in the backend environment.
+
+## API endpoints
+
+| Method | Endpoint | Access | Purpose |
+|---|---|---|---|
+| POST | `/api/messages` | Public | Submit and triage a customer message |
+| GET | `/api/messages` | Support token | List message history |
+| GET | `/api/messages/{id}` | Support token | Retrieve one message |
+| PATCH | `/api/messages/{id}/review` | Support token | Update review status |
+| GET | `/api/dashboard/stats` | Support token | Dashboard statistics |
+| GET | `/api/health` | Public | Health check |
+
+The support dashboard sends `X-Support-Token` in its API requests. This is a minimal demo access gate, not a replacement for production user accounts, role-based access, token rotation, rate limiting or a full authentication provider.
+
+## Existing AI challenge workflow
+
+The original CLI tools remain available:
 
 ```bash
 python triage.py
@@ -37,59 +113,28 @@ python eval.py
 python dashboard_generator.py
 ```
 
-Open `dashboard.html` in a browser. The dashboard reads `results.json` and works without a web server.
+- `triage.py` runs inference and produces structured decisions.
+- `eval.py` independently compares saved decisions with the hand-labelled examples. **triage.py does not call eval.py.**
+- `dashboard_generator.py` creates the original static HTML report. The new React dashboard reads persistent records through FastAPI instead.
 
-Useful options:
+## Tests
 
-```bash
-python triage.py --input data/messages.json --output results.json --limit 5
-python eval.py --results results.json --truth data/ground_truth.json
-python dashboard_generator.py --results results.json --output dashboard.html
-```
-
-The triage command processes locally handled empty/injection messages without an API request. Other valid messages require `GROQ_API_KEY`.
-
-## 3. Reliability safeguards
-
-- **Input validation:** checks the JSON root, row shape, IDs, duplicate IDs, message type and maximum message length. Obvious keyboard-mash text is conservatively caught by a simple heuristic. Invalid rows become explicit human-review fallback results; malformed JSON produces a clear CLI error.
-- **Prompt-injection defence:** the customer text is treated as untrusted data in the system instructions. A conservative local pattern guard intercepts clear instruction-manipulation phrases. This is defence in depth, not a guarantee against every possible attack.
-- **High-risk escalation:** security/privacy, legal, financial-hardship and selected distress indicators force human review; the model cannot turn these flags off.
-- **Strict output validation:** requires exactly the six schema fields, allowed category/priority values, non-empty bounded strings, a real boolean and a numeric confidence between 0 and 1.
-- **Confidence policy:** confidence below 0.65 forces `needs_human=true`. Model confidence is self-reported and is not a calibrated probability.
-- **Retries and fallback:** malformed model output or API errors are retried up to two times after the first attempt. If all attempts fail, Frontline emits a P1, human-review fallback with confidence 0 rather than pretending the message was classified successfully.
-- **No unsupported claims:** the prompt asks for summaries grounded in the message and suggested actions phrased as next steps, not completed actions. Human review is still needed to assess factual grounding.
-
-## 4. Evaluation
-
-`data/ground_truth.json` contains 10 hand-labelled reference messages. `eval.py` reports category, priority, human-review and exact three-field agreement.
-
-The reference examples also include `summary_must_mention` and `action_must_mention` keyword checklists. These produce transparent summary/action coverage scores. They are lightweight rubric checks, not semantic correctness or hallucination detection; a human should review the actual wording.
-
-The evaluator also reports missing labels, malformed result rows, token usage, latency and fallback counts. Only metrics from a real run of `python triage.py` should be presented as measured results. `results.sample.json` is a simulated demonstration fixture, not evidence of live model performance.
-
-Run unit tests without a Groq key:
+Backend tests do not require a live Groq key:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-## 5. Project files
+Frontend production build:
 
-| File | Purpose |
-|---|---|
-| `triage.py` | Input validation, local safeguards, model call, schema validation, escalation, retry and fallback |
-| `eval.py` | Compares model decisions with hand labels and checks summary/action rubric coverage |
-| `dashboard_generator.py` | Generates the self-contained interactive dashboard |
-| `data/messages.json` | The 40-message challenge dataset |
-| `data/ground_truth.json` | Ten hand-labelled examples and transparent text-quality rubrics |
-| `tests/test_triage.py` | Offline unit tests for validation and safety behaviour |
-| `AI_DECISIONS.md` | Model, guardrail, evaluation and limitation notes |
-| `results.sample.json` | Simulated example output only; not a live evaluation |
+```bash
+cd frontend
+npm install
+npm run build
+```
 
-## 6. Known limitations
+GitHub Actions runs both checks on pushes to `main`.
 
-- Regex-based prompt-injection and risk detection can miss paraphrases and can occasionally flag benign text. It is a guardrail, not a complete security boundary.
-- A self-reported confidence value is not calibrated. The 0.65 threshold is a conservative routing rule, not a measured probability of correctness.
-- Keyword rubrics do not establish semantic accuracy, factual grounding or whether an action is operationally appropriate.
-- Ten labelled examples are a small evaluation sample. Expand the labelled set and have humans review summaries/actions before using this for real customer operations.
-- The application proposes decisions only. It does not issue refunds, change accounts, contact customers or perform other support actions.
+## Current scope and next steps
+
+This is the first full-stack MVP foundation. Before production use, add proper support-agent authentication and roles, Alembic-managed migrations, pagination/retention policies, rate limiting, audit logging, background retries for failed inference, and deployment configuration. The current API uses synchronous inference to keep the first workflow understandable and testable.
