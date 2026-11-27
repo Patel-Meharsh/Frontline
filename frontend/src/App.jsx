@@ -59,9 +59,8 @@ function SupportDashboard({ onLogout }) {
       setError("");
     } catch(err) {
       setError(err.message||"Could not connect to Frontline API.");
-      if(err.message?.toLowerCase().includes("sign in")) onLogout();
     } finally { setLoading(false); }
-  },[filter,onLogout]);
+  },[filter]);
   useEffect(()=>{refresh();},[refresh]);
   const visible=useMemo(()=>messages.filter(item=>{
     const needle=search.toLowerCase();
