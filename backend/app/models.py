@@ -3,6 +3,16 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Te
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db import Base
 
+
+class StaffUser(Base):
+    __tablename__ = "staff_users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
 class Message(Base):
     __tablename__ = "messages"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -14,6 +24,7 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     decision: Mapped["TriageDecision | None"] = relationship(back_populates="message", cascade="all, delete-orphan", uselist=False)
     reviews: Mapped[list["MessageReview"]] = relationship(back_populates="message", cascade="all, delete-orphan")
+
 
 class TriageDecision(Base):
     __tablename__ = "triage_decisions"
@@ -32,6 +43,7 @@ class TriageDecision(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     message: Mapped[Message] = relationship(back_populates="decision")
+
 
 class MessageReview(Base):
     __tablename__ = "message_reviews"
